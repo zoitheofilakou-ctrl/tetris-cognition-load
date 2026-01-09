@@ -1,102 +1,106 @@
-# API Reference – Marker Functions (api.py)
+# Tetris-iMotions API Reference
 
-This file documents the key marker-sending functions defined in `api.py`. These functions send formatted UDP messages to iMotions, and are used across the Tetris gameplay codebase to tag events in real time.
+## API Reference – Unified Event Marker Interface (`api.py`)
+
+This file defines the **centralized event communication interface** between the Tetris application and iMotions.
+All experimental markers are transmitted via **UDP** using a **single standardized function**, ensuring format consistency, low latency, and reliable synchronization with EEG and eye-tracking data.
+
+The `api.py` module is intentionally minimal and **does not contain game logic**.
+It acts as a shared communication layer imported by multiple gameplay modules.
 
 ---
 
-## Functions
+## Marker Function
 
-### 1. `send_event_marker(label, description)`
+### `send_event(sample, value)`
 
-* **Purpose:** Sends a single M;1 event marker with a label and description
-* **Used for:** `StartGame`, `GameOver`, etc.
-* **Example:**
+**Purpose**
+Sends a single, momentary experimental event marker (`M;1`) to iMotions.
 
-  ```python
-  send_event_marker("StartGame", "Player started the game")
-  # Sends: M;1;;;StartGame;Player started the game;D;
+This is the **only marker-sending function** used in the codebase.
 
-  ```
+**Format**
 
-### 2. `send_scene_start(label)`
+```
+M;1;<sample>;<value>
+```
 
-* **Purpose:** Begins a scene marker (M;2)
-* **Used for:** `EasyLevel`, `HardLevel`, etc.
-* **Example:**
+**Parameters**
 
-  ```python
-  send_scene_start("EasyLevel")
-  # Sends: M;2;;;EasyLevel;Scene start;B;
+* `sample` (string): Event label (e.g., `GameStart`, `LevelStart`, `LineClear`)
+* `value` (int | string): Event value or payload
 
-  ```
+**Example**
 
-### 3. `send_scene_end(label)`
+```python
+send_event("GameStart", 1)
+send_event("LevelStart", 2)
+send_event("LineClear", 1)
+send_event("FinalScore", 4200)
+```
 
-* **Purpose:** Ends a scene marker (M;2)
-* **Used for:** Called when level ends or timeout happens
-* **Example:**
+Each call sends a single UDP packet to iMotions containing a correctly formatted `M;1` marker.
 
-  ```python
-  send_scene_end("EasyLevel")
-  # Sends: M;2;;;EasyLevel;Scene end;E;
+---
 
-  ```
+## Design Principles
 
-### 4. `send_score_update(score)`
+* All markers use **M;1 sample-based events**
+* No scene markers (`M;2`) are used
+* No raw UDP messages are sent outside `api.py`
+* All event semantics are defined at the caller level
+* The API guarantees format consistency across the experiment
 
-* **Purpose:** Sends current score as an M;1 marker
-* **Example:**
+This design minimizes error probability, simplifies debugging, and prevents silent data loss caused by incompatible marker formats.
 
-  ```python
-  send_score_update(400)
-  # Sends: M;1;;;ScoreUpdate;400;D;
+---
 
-  ```
+## Usage Across Codebase
 
-### 5. `send_level_update(level)`
+The `send_event()` function is imported and used by multiple modules:
 
-* **Purpose:** Sends current level as an M;1 marker
-* **Example:**
+* `menu.py`
+  Used for high-level experimental events (e.g., game start, level start)
 
-  ```python
-  send_level_update("Medium")
-  # Sends: M;1;;;LevelUpdate;Medium;D;
+* `grid.py`
+  Used for atomic gameplay events (e.g., line clears)
 
-  ```
+* `main.py`
+  Used for session termination events (e.g., final score, game end)
 
-### 6. `send_line_clear()`
-
-* **Purpose:** Sends a marker when a row is cleared
-* **Used in:** `grid.py` inside `is_row_full()`
-* **Example:**
-
-  ```python
-  send_line_clear()
-  # Sends: M;1;;;LineClear;;D;
-
-  ```
-
-### 7. `send_line_clear_summary(total_lines)`
-
-* **Purpose:** Sends a summary of cleared lines at game end
-* **Example:**
-
-  ```python
-  send_line_clear_summary(8)
-  # Sends: M;1;;;LineClearsSum;8;D;
-
-  ```
+All modules communicate with iMotions **exclusively through `api.py`**.
 
 ---
 
 ## UDP Transmission Details
 
-* Messages are sent to: `localhost:8089`
-* Format follows iMotions standard: `M;<type>;;;<label>;<value>;<status>;
-  \n`
-* `M;1` = single momentary event
-* `M;2` = scene (begin/end)
+* **Protocol:** UDP (User Datagram Protocol)
+* **Destination:** `127.0.0.1 : 8089`
+* **Rationale:**
+  UDP is used to minimize latency and preserve accurate temporal alignment between gameplay events, EEG signals, and eye-tracking data.
 
 ---
 
-> This file will be updated as new marker functions are added or modified.
+## Maintenance Rule
+
+If event markers stop appearing in iMotions:
+
+1. Check `api.py`
+2. Ensure all events are sent via `send_event()`
+3. Verify that no legacy marker functions are used
+
+---
+
+## Deprecated Functionality
+
+The following approaches are **no longer used** and must not be reintroduced:
+
+* Multiple marker-sending functions
+* Scene-based markers (`M;2`)
+* Raw UDP or TCP message sending from other modules
+* Hardcoded marker formats outside `api.py`
+
+---
+
+**This file reflects the final, lab-ready event communication design and serves as the single source of truth for experimental marker transmission.**
+

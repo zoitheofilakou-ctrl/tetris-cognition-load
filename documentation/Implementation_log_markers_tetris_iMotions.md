@@ -1,76 +1,179 @@
-# Implementation Log: iMotions Event Marker Integration
+Τέλειο — πάμε **τελική, καθαρή, 100% ευθυγραμμισμένη έκδοση**
+👉 **χωρίς ERP**,
+👉 **μόνο frequency-domain (alpha / theta)**,
+👉 **execution-level, marker-only documentation**.
 
-This log documents exactly where and how gameplay events were integrated with iMotions event markers using Python and XML. It follows a modular pattern with `api.py`all communication with iMotions is handled with api.py.
+Αυτό που ακολουθεί είναι **ΑΚΡΙΒΩΣ** το κείμενο που πρέπει να βάλεις στο
+`Implementation_log_markers_t3imosciences.md`.
+
+Μπορείς να το κάνεις **copy–paste αυτούσιο**.
 
 ---
 
-## Goal
+# Implementation Log – Event Markers (EEG–Tetris × iMotions)
 
-To send real-time markers for both discrete events (e.g., `ScoreUpdate`) and scene transitions (e.g., `EasyLevel`) from the Tetris game to iMotions using UDP protocol.
+This document records the **exact implementation points** of experimental event markers used to synchronize Tetris gameplay with EEG and eye-tracking data in iMotions.
+It complements the API reference by documenting **where each marker is triggered in the codebase, when it is sent, and why this design is experiment-safe**.
+
+All markers are transmitted via a unified API (`send_event`) and logged as **momentary sample-based events (M;1)**.
+Markers are used exclusively for **temporal segmentation of gameplay phases and conditions** in support of frequency-domain EEG analysis (e.g., alpha and theta power).
 
 ---
 
-## 1. `api.py` Marker Functions
+## Design Principles
 
-These are the centralized functions used to send markers:
+All experimental markers follow three strict rules:
+
+1. Each marker is triggered **exactly once**
+2. Each marker is sent from the **logical origin of the event**
+3. No marker is inferred indirectly from other variables (e.g., score or speed)
+
+Violation of any rule renders the experiment unsafe for EEG and eye-tracking analysis.
+
+---
+
+## Marker Transmission Layer
+
+All communication with iMotions is handled exclusively by:
 
 ```python
-send_event_marker(label, description)
-send_scene_start(label)
-send_scene_end(label)
-send_line_clear()
-send_score_update(score)
-send_level_update(level)
-send_line_clear_summary(total_lines)
+send_event(sample, value)
 ```
 
-All messages follow iMotions format (`M;1;...` or `M;2;...`) and are sent to localhost on port 8089.
+defined in `tetris_code/api.py`.
+
+No other module opens sockets, formats UDP messages, or sends raw marker strings.
 
 ---
 
-## 2. `main.py` Integration
+## Marker Integration by File
 
-* `send_event_marker("StartGame", ...)` → after waiting screen ends
-* `send_scene_start("EasyLevel")` → at level start
-* `send_scene_end("EasyLevel")` → at level end (e.g., game over or timeout)
+### 1. `menu.py` — Task and Condition Onset
 
----
+**Markers sent:**
 
-## 3. `grid.py` Integration
+```python
+send_event("StartGame", 1)
+send_event(f"{level_name}Level", "Start")
+```
 
-* `send_line_clear()` → inside `is_row_full()`
-* Called when a row is cleared and blocks drop
+**Trigger point:**
+Immediately before gameplay begins, when the user selects a difficulty level.
 
----
+**Rationale:**
 
-## 4. `game.py` Integration
+* `StartGame` marks **task onset**
+* `<Level>Level Start` marks **experimental condition onset**
+* Explicit onset markers are required for reliable segmentation of EEG and eye-tracking data into task phases and difficulty conditions
 
-* `send_score_update(score)` → inside `write_end_game_data()`
-* `send_level_update(level)` → same as above
-* `send_line_clear_summary(total_lines)` → same
-* `send_scene_end(...)` → also in `write_end_game_data()`
-
----
-
-## 5. `eventsource.xml` Notes
-
-* All events (e.g., `StartGame`, `ScoreUpdate`) defined as `<Sample>` and `<Field>` elements
-* Field ID limited to 20 chars (e.g., `LineClearsSum` instead of `LineClearsSummarySample`)
+Implicit difficulty changes are not experiment-safe.
 
 ---
 
-##  6. Testing & Fixes
+### 2. `grid.py` — Atomic Performance Events
 
-* Fixed: `StartGame` not appearing → added call in `main.py`
-* Added: `from api import send_event_marker` to import properly
-* Verified: Markers show live in iMotions Sensor Preview
+**Marker sent:**
+
+```python
+send_event("LineClear", 1)
+```
+
+**Trigger point:**
+Inside `is_row_full()`, at the exact moment a row-clear condition is detected.
+
+**Rationale:**
+
+* Line clears represent **discrete performance success events**
+* They are logged **before** score aggregation or speed changes
+* This enables precise segmentation of EEG data for **frequency-domain workload analysis** (e.g., alpha and theta power during successful actions)
+
+Line clears must be logged at detection time and never inferred from score updates.
 
 ---
 
-## To Do
+### 3. `main.py` — Task Termination and Outcome
 
-* [ ] Confirm export of markers in iMotions CSV
-* [ ] Add timestamps if needed
-* [ ] Create custom export profile in iMotions
+**Markers sent (exactly once per run):**
 
-> This log supports reproducibility and serves as a coding reference.
+```python
+send_event("FinalScore", score)
+send_event("GameOver", termination_reason)
+```
+
+**Termination conditions:**
+
+* Time limit reached → `GameOver = "TimeLimit"`
+* Block stacking (loss) → `GameOver = "BlockOut"`
+
+A single boolean flag (`task_ended`) enforces one and only one termination event.
+
+**Rationale:**
+
+* Prevents duplicate termination markers
+* Makes termination cause explicit
+* Defines a clear end of the analysis window for EEG and eye-tracking data
+* Protects trial-level segmentation for statistical analysis
+
+No experimental logic exists inside UI-only loops.
+
+---
+
+## Score Semantics
+
+Two distinct score-related markers are enforced:
+
+### `ScoreUpdate`
+
+```python
+send_event("ScoreUpdate", current_score)
+```
+
+* Sent during gameplay
+* Represents **time-varying performance**
+* Can be aligned with short EEG windows for exploratory analysis
+
+### `FinalScore`
+
+```python
+send_event("FinalScore", final_score)
+```
+
+* Sent exactly once at task termination
+* Represents **trial-level outcome**
+
+This separation prevents ambiguity between ongoing performance and final results.
+
+---
+
+## Verification Status
+
+* Markers verified live in iMotions Sensor Preview
+* Marker format aligned with `eventsource.xml` (**M;1 only**)
+* No scene-based markers (`M;2`) are used
+* All markers originate from a single API layer
+* Markers are used for **temporal segmentation**, not for ERP analysis
+
+---
+
+## Debugging Checklist
+
+If marker timing or presence appears incorrect:
+
+1. Verify `send_event()` usage in the relevant module
+2. Confirm the marker is triggered at the logical origin of the event
+3. Ensure the marker is not duplicated
+4. Ensure no marker is inferred indirectly from other variables
+5. Confirm no legacy marker functions or scene logic exist
+
+---
+
+> This implementation ensures scientifically valid synchronization between gameplay events, EEG signals, and eye-tracking data for frequency-domain workload analysis (e.g., alpha and theta power).
+> The document serves as a reproducibility record and a precise reference for experimental instrumentation.
+## Example Marker Calls
+```python
+send_event("GameStart", 1)
+send_event("LevelStart", 2)
+send_event("LineClear", 1)
+send_event("FinalScore", 4200)
+```
+

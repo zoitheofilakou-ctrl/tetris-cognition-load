@@ -3,8 +3,7 @@ from colors import Colors
 import sys
 import time
 import api
-from api import sendudp
-from api import send_line_clear
+
 
 
 class Grid:
