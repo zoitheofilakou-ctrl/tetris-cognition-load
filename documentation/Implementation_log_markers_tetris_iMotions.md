@@ -1,14 +1,3 @@
-Τέλειο — πάμε **τελική, καθαρή, 100% ευθυγραμμισμένη έκδοση**
-👉 **χωρίς ERP**,
-👉 **μόνο frequency-domain (alpha / theta)**,
-👉 **execution-level, marker-only documentation**.
-
-Αυτό που ακολουθεί είναι **ΑΚΡΙΒΩΣ** το κείμενο που πρέπει να βάλεις στο
-`Implementation_log_markers_t3imosciences.md`.
-
-Μπορείς να το κάνεις **copy–paste αυτούσιο**.
-
----
 
 # Implementation Log – Event Markers (EEG–Tetris × iMotions)
 
